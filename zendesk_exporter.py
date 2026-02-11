@@ -23,32 +23,28 @@ class ZendeskAPIClient:
 
     def search_tickets_by_organization(self, organization_id):
         all_tickets = []
-        cursor = None
-        has_more = True
-        page_count = 0
-
+        page_number = 1
+        per_page = 100 # Max page size for search API
+        
         logging.info(f"Starting to fetch tickets for organization ID: {organization_id}")
 
-        while has_more:
-            page_count += 1
+        while True:
             params = {
                 "query": f"type:ticket organization_id:{organization_id}",
-                "page[size]": 100 # Max page size for search API
+                "per_page": per_page,
+                "page": page_number
             }
-            if cursor:
-                params["page[after]"] = cursor
 
-            logging.debug(f"Fetching page {page_count} with cursor: {cursor}")
+            logging.debug(f"Fetching page {page_number} with {per_page} items per page")
             response_data = self.get("/search.json", params=params)
             tickets = response_data.get("results", [])
             all_tickets.extend(tickets)
-            logging.info(f"Fetched {len(tickets)} tickets on page {page_count}. Total tickets: {len(all_tickets)}")
+            logging.info(f"Fetched {len(tickets)} tickets on page {page_number}. Total tickets: {len(all_tickets)}")
 
-            meta = response_data.get("meta", {})
-            links = response_data.get("links", {})
+            if not tickets or len(tickets) < per_page:
+                break # No more tickets or last page
 
-            has_more = meta.get("has_more")
-            cursor = meta.get("after_cursor")
+            page_number += 1
 
         logging.info(f"Finished fetching all tickets for organization ID: {organization_id}. Total: {len(all_tickets)}")
         return all_tickets
