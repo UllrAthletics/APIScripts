@@ -15,8 +15,25 @@ ZENDESK_API_TOKEN = "your-api-token-here"  # Replace with your API token
 BASE_URL = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
 ENDPOINT = "/api/v2/users.json?role=end-user"
 
+def get_organization(org_id):
+    """Fetch organization details including custom fields"""
+    if not org_id:
+        return {}
+
+    url = f"{BASE_URL}/api/v2/organizations/{org_id}.json"
+    response = requests.get(
+        url,
+        auth=(f"{ZENDESK_EMAIL}/token", ZENDESK_API_TOKEN)
+    )
+
+    if response.status_code == 200:
+        return response.json().get('organization', {})
+    else:
+        print(f"Warning: Could not fetch organization {org_id}: {response.status_code}")
+        return {}
+
 def export_end_users():
-    """Export all end users from Zendesk"""
+    """Export all end users from Zendesk with organization custom fields"""
     all_users = []
     url = BASE_URL + ENDPOINT
 
@@ -41,6 +58,29 @@ def export_end_users():
 
         # Get next page URL (Zendesk uses cursor-based pagination)
         url = data.get('next_page')
+
+    # Enrich users with organization data including custom fields
+    print("\nEnriching users with organization data...")
+    org_cache = {}  # Cache organizations to avoid duplicate API calls
+
+    for user in all_users:
+        org_id = user.get('organization_id')
+        if org_id:
+            # Use cached org data if available
+            if org_id not in org_cache:
+                org_cache[org_id] = get_organization(org_id)
+
+            org = org_cache[org_id]
+            if org:
+                # Add organization name
+                user['org_name'] = org.get('name', '')
+
+                # Add custom organization fields
+                org_fields = org.get('organization_fields', {})
+                for field_key, field_value in org_fields.items():
+                    user[f'org_field_{field_key}'] = field_value
+
+    print(f"Fetched data for {len(org_cache)} unique organizations")
 
     # Save to CSV file
     output_file = "zendesk_end_users.csv"
