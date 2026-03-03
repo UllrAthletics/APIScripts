@@ -5,11 +5,12 @@ Simple script to export all end users from Zendesk
 
 import requests
 import csv
+import os
 
 # Zendesk Configuration
-ZENDESK_SUBDOMAIN = "your-subdomain"  # Replace with your Zendesk subdomain
-ZENDESK_EMAIL = "your-email@example.com"  # Replace with your Zendesk email
-ZENDESK_API_TOKEN = "your-api-token-here"  # Replace with your API token
+ZENDESK_SUBDOMAIN = os.getenv('ZENDESK_SUBDOMAIN', 'your-subdomain')
+ZENDESK_EMAIL = os.getenv('ZENDESK_EMAIL', 'your-email@example.com')
+ZENDESK_API_TOKEN = os.getenv('ZENDESK_API_TOKEN', 'your-api-token')
 
 # API endpoint
 BASE_URL = f"https://{ZENDESK_SUBDOMAIN}.zendesk.com"
@@ -102,4 +103,12 @@ def export_end_users():
         print("\n! No users found to export")
 
 if __name__ == "__main__":
+    # Validate configuration
+    if ZENDESK_SUBDOMAIN == 'your-subdomain' or ZENDESK_EMAIL == 'your-email@example.com':
+        print("Please set your Zendesk credentials:")
+        print("  export ZENDESK_SUBDOMAIN='your-subdomain'")
+        print("  export ZENDESK_EMAIL='your-email@example.com'")
+        print("  export ZENDESK_API_TOKEN='your-api-token'")
+        exit(1)
+
     export_end_users()
