@@ -333,8 +333,9 @@ class TestZendeskAPIClient(unittest.TestCase):
 
         call_args = mock_get.call_args
         query = call_args[1]["params"]["query"]
-        self.assertIn("custom_field_360047533253:P1", query)
-        self.assertIn("custom_field_360047533253:P2", query)
+        # Query should use lowercase for Zendesk API
+        self.assertIn("custom_field_360047533253:p1", query)
+        self.assertIn("custom_field_360047533253:p2", query)
 
     @patch.object(ZendeskAPIClient, 'get')
     def test_search_tickets_by_timeframe_with_org(self, mock_get):
@@ -438,8 +439,12 @@ class TestQueryBuilder(unittest.TestCase):
             end_date="2024-01-31",
             ticket_priorities=["P1", "P2"]
         )
-        self.assertIn("custom_field_360047533253:P1", query)
-        self.assertIn("custom_field_360047533253:P2", query)
+        # Query should use lowercase for Zendesk API, space-separated (no parentheses)
+        self.assertIn("custom_field_360047533253:p1", query)
+        self.assertIn("custom_field_360047533253:p2", query)
+        # Ensure no parentheses around priority queries
+        self.assertNotIn("(custom_field", query)
+        self.assertNotIn("custom_field_360047533253:p1)", query)
 
     def test_build_query_combined(self):
         query = build_search_query(
@@ -453,7 +458,8 @@ class TestQueryBuilder(unittest.TestCase):
         self.assertIn("organization_id:12345", query)
         self.assertIn("created>=2024-01-01", query)
         self.assertIn("created<=2024-01-31", query)
-        self.assertIn("custom_field_360047533253:P1", query)
+        # Query should use lowercase for Zendesk API
+        self.assertIn("custom_field_360047533253:p1", query)
 
 
 class TestFilenameGeneration(unittest.TestCase):
@@ -749,19 +755,23 @@ class TestPriorityBreakdown(unittest.TestCase):
         self.assertEqual(breakdown['P4'], 0)
         self.assertEqual(breakdown['unassigned'], 0)
 
-    def test_calculate_priority_breakdown_case_sensitive(self):
-        """Test that priority values match exactly (case-sensitive)"""
+    def test_calculate_priority_breakdown_case_insensitive(self):
+        """Test that priority values match case-insensitively"""
         tickets = [
             {'id': 1, 'custom_fields': [{'id': 360047533253, 'value': 'P1'}]},
             {'id': 2, 'custom_fields': [{'id': 360047533253, 'value': 'p1'}]},  # lowercase
             {'id': 3, 'custom_fields': [{'id': 360047533253, 'value': 'P2'}]},
+            {'id': 4, 'custom_fields': [{'id': 360047533253, 'value': 'p3'}]},  # lowercase
         ]
 
         breakdown = calculate_priority_breakdown(tickets)
 
-        self.assertEqual(breakdown['P1'], 1)  # Only exact match counts
+        # Both uppercase and lowercase should count
+        self.assertEqual(breakdown['P1'], 2)  # Counts both 'P1' and 'p1'
         self.assertEqual(breakdown['P2'], 1)
-        self.assertEqual(breakdown['unassigned'], 1)  # lowercase 'p1' is unassigned
+        self.assertEqual(breakdown['P3'], 1)  # Counts 'p3'
+        self.assertEqual(breakdown['P4'], 0)
+        self.assertEqual(breakdown['unassigned'], 0)
 
     def test_calculate_priority_breakdown_only_p1(self):
         """Test breakdown with only P1 tickets"""

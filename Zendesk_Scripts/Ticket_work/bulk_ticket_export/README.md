@@ -15,6 +15,7 @@ Export Zendesk tickets by organization, timeframe, or both, with optional full e
 - **Custom priority filtering:**
   - Filter by custom "Ticket Priority" field (P1, P2, P3, P4)
   - Single or multiple priority levels
+  - Case-insensitive (handles both uppercase P1 and lowercase p1)
 - **Multiple output formats:**
   - JSON format (default) - includes full structure and metadata
   - CSV format - flattened data for spreadsheet analysis

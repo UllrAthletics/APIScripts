@@ -190,9 +190,11 @@ def build_search_query(organization_id=None, start_date=None, end_date=None,
         query_parts.append(f"{date_field}<={end_date}")
 
     # Add custom field priority filter (uses OR logic for multiple priorities)
+    # Convert to lowercase for Zendesk query (Zendesk uses lowercase priority values)
+    # Note: Space-separated custom field queries use OR logic automatically (no parentheses needed)
     if ticket_priorities:
-        priority_queries = [f"custom_field_{PRIORITY_FIELD_ID}:{p}" for p in ticket_priorities]
-        query_parts.append(f"({' '.join(priority_queries)})")
+        for p in ticket_priorities:
+            query_parts.append(f"custom_field_{PRIORITY_FIELD_ID}:{p.lower()}")
 
     return " ".join(query_parts)
 
@@ -764,8 +766,10 @@ def calculate_priority_breakdown(tickets):
         for field in custom_fields:
             if field.get('id') == int(PRIORITY_FIELD_ID):
                 priority_value = field.get('value', '')
-                if priority_value in VALID_PRIORITIES:
-                    breakdown[priority_value] += 1
+                # Normalize to uppercase for comparison (Zendesk may use lowercase)
+                priority_upper = priority_value.upper() if priority_value else ''
+                if priority_upper in VALID_PRIORITIES:
+                    breakdown[priority_upper] += 1
                     priority_found = True
                 break
 
@@ -871,8 +875,8 @@ Examples:
                        help='Select which credential set to use (1 or 2)')
 
     # Export options
-    parser.add_argument('--format', default='json', choices=['json', 'csv'],
-                       help='Output file format (default: json)')
+    parser.add_argument('--format', choices=['json', 'csv'],
+                       help='Output file format (default: json, or from OUTPUT_FORMAT env var)')
     parser.add_argument('--no-history', action='store_true',
                        help='Skip fetching audit history and comments (faster)')
     parser.add_argument('--output',
@@ -1007,10 +1011,21 @@ if __name__ == "__main__":
         logging.warning("CSV format does not include full audit/comment history. Only ticket metadata and counts will be exported.")
         logging.warning("For complete history, use JSON format (--format json)")
 
-    # Generate output filename if not specified
+    # Generate output filename if not specified, or fix extension mismatch
     if not output_path:
+        # No output path provided - generate one with correct extension
         output_path = generate_filename(start_date, end_date, priorities, organization_id, output_format)
         logging.info(f"Using generated filename: {output_path}")
+    else:
+        # Output path provided - check if extension matches format
+        file_ext = os.path.splitext(output_path)[1].lower()
+        expected_ext = f".{output_format}"
+
+        if file_ext != expected_ext:
+            # Extension doesn't match format - fix it
+            base_path = os.path.splitext(output_path)[0]
+            output_path = f"{base_path}{expected_ext}"
+            logging.warning(f"Output file extension '{file_ext}' doesn't match format '{output_format}'. Changed to: {output_path}")
 
     # Initialize Zendesk API client
     client = ZendeskAPIClient(SUBDOMAIN, EMAIL, API_TOKEN)
