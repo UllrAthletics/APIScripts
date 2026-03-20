@@ -174,13 +174,154 @@ Format the response clearly for email delivery. Use clear headings and bullet po
         raise RuntimeError(f"Failed to analyze with Gemini: {e}")
 
 
+def markdown_to_html(markdown_text):
+    """
+    Convert markdown text to HTML with proper formatting.
+
+    Args:
+        markdown_text (str): Markdown formatted text from Gemini
+
+    Returns:
+        str: HTML formatted text
+    """
+    try:
+        import markdown
+
+        # Convert markdown to HTML
+        html_content = markdown.markdown(
+            markdown_text,
+            extensions=['extra', 'nl2br', 'sane_lists']
+        )
+
+        # Wrap in styled HTML
+        html_body = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 20px;
+        }}
+        h1, h2, h3 {{
+            color: #2c3e50;
+            margin-top: 24px;
+            margin-bottom: 16px;
+        }}
+        h1 {{
+            border-bottom: 2px solid #eaecef;
+            padding-bottom: 8px;
+        }}
+        h2 {{
+            border-bottom: 1px solid #eaecef;
+            padding-bottom: 6px;
+        }}
+        ul, ol {{
+            padding-left: 24px;
+        }}
+        li {{
+            margin: 4px 0;
+        }}
+        code {{
+            background-color: #f6f8fa;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Courier New', monospace;
+        }}
+        pre {{
+            background-color: #f6f8fa;
+            padding: 16px;
+            border-radius: 6px;
+            overflow-x: auto;
+        }}
+        strong {{
+            color: #2c3e50;
+        }}
+        table {{
+            border-collapse: collapse;
+            width: 100%;
+            margin: 16px 0;
+        }}
+        th, td {{
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: left;
+        }}
+        th {{
+            background-color: #f6f8fa;
+            font-weight: bold;
+        }}
+    </style>
+</head>
+<body>
+{html_content}
+</body>
+</html>"""
+
+        return html_body
+
+    except ImportError:
+        logger.warning("markdown package not installed, using basic HTML conversion")
+        # Fallback: basic manual conversion
+        import html
+        escaped = html.escape(markdown_text)
+
+        # Basic conversions
+        lines = escaped.split('\n')
+        html_lines = []
+
+        for line in lines:
+            # Headers
+            if line.startswith('### '):
+                html_lines.append(f'<h3>{line[4:]}</h3>')
+            elif line.startswith('## '):
+                html_lines.append(f'<h2>{line[3:]}</h2>')
+            elif line.startswith('# '):
+                html_lines.append(f'<h1>{line[2:]}</h1>')
+            # Bullet points
+            elif line.strip().startswith('- ') or line.strip().startswith('* '):
+                html_lines.append(f'<li>{line.strip()[2:]}</li>')
+            # Numbered lists
+            elif line.strip() and line.strip()[0].isdigit() and '. ' in line:
+                content = line.strip().split('. ', 1)[1] if '. ' in line else line
+                html_lines.append(f'<li>{content}</li>')
+            else:
+                html_lines.append(f'<p>{line}</p>' if line.strip() else '<br>')
+
+        html_content = '\n'.join(html_lines)
+
+        return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body {{
+            font-family: Arial, sans-serif;
+            line-height: 1.6;
+            color: #333;
+            padding: 20px;
+        }}
+        h1, h2, h3 {{ color: #2c3e50; }}
+        li {{ margin: 4px 0; }}
+    </style>
+</head>
+<body>
+{html_content}
+</body>
+</html>"""
+
+
 def send_email(subject, body, dry_run=False):
     """
     Send email via Gmail SMTP.
 
     Args:
         subject (str): Email subject
-        body (str): Email body (plain text)
+        body (str): Email body (markdown format from Gemini)
         dry_run (bool): If True, print email instead of sending
     """
     email_from = os.environ.get('EMAIL_FROM')
@@ -205,19 +346,16 @@ def send_email(subject, body, dry_run=False):
         return
 
     # Create email message
-    msg = MIMEMultipart()
+    msg = MIMEMultipart('alternative')
     msg['From'] = email_from
     msg['To'] = ', '.join(recipients)
     msg['Subject'] = subject
 
-    # Convert plain text to HTML with basic formatting
-    html_body = f"""<html>
-<head></head>
-<body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333;">
-<pre style="white-space: pre-wrap; font-family: Arial, sans-serif;">{body}</pre>
-</body>
-</html>"""
+    # Convert markdown to HTML
+    html_body = markdown_to_html(body)
 
+    # Attach both plain text and HTML versions
+    msg.attach(MIMEText(body, 'plain'))
     msg.attach(MIMEText(html_body, 'html'))
 
     try:
