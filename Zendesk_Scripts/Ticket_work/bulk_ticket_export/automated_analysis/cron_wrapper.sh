@@ -23,9 +23,9 @@ echo "========================================" >> logs/cron.log
 echo "Execution started at $(date)" >> logs/cron.log
 echo "========================================" >> logs/cron.log
 
-# Run the analysis (using Gemini, P1 tickets only)
+# Run the analysis (P1 tickets only)
 # Remove --priorities flag to get all tickets
-python3 ticket_analyzer.py --llm gemini --priorities P1 2>&1 | tee -a logs/cron.log
+python3 ticket_analyzer.py --priorities P1 2>&1 | tee -a logs/cron.log
 
 # Capture exit code
 EXIT_CODE=$?

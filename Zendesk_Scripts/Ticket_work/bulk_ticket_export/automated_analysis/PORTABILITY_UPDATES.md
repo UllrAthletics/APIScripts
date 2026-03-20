@@ -103,7 +103,7 @@ cd "$SCRIPT_DIR"
 
 5. **Test it:**
    ```bash
-   ./run_analysis.sh gemini P1
+   ./run_analysis.sh P1
    ```
 
 6. **Install cron job:**
@@ -142,7 +142,7 @@ To verify portability works:
 ```bash
 # Test from a different directory
 cd ~
-/path/to/bulk_ticket_export/run_analysis.sh gemini P1
+/path/to/bulk_ticket_export/run_analysis.sh P1
 
 # Test the wrapper script
 /path/to/bulk_ticket_export/cron_wrapper.sh

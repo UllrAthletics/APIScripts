@@ -10,7 +10,7 @@ The following files have been created in this directory:
 
 ```
 /Users/hunter-morrison/git/APIScripts/Zendesk_Scripts/Ticket_work/bulk_ticket_export/
-├── ticket_analyzer.py        ← Main analysis script (Claude + Gemini support)
+├── ticket_analyzer.py        ← Main analysis script (Gemini AI)
 ├── run_analysis.sh            ← Quick test script (dry-run mode)
 ├── cron_wrapper.sh            ← Cron job wrapper
 ├── requirements.txt           ← Python dependencies (already installed ✓)
@@ -35,11 +35,7 @@ export ZENDESK_SUBDOMAIN="your_subdomain"
 export ZENDESK_EMAIL="your_zendesk_email@company.com"
 export ZENDESK_API_TOKEN="your_zendesk_api_token"
 
-# --- LLM API Keys (choose one or both) ---
-# For Claude:
-export ANTHROPIC_API_KEY="sk-ant-..."
-
-# For Gemini:
+# --- Gemini API Key ---
 export GOOGLE_API_KEY="AIza..."
 
 # --- Gmail SMTP Configuration ---
@@ -68,25 +64,25 @@ Since you're using Gmail, you need an App Password (not your regular Gmail passw
 
 Before setting up the cron job, test that everything works:
 
-#### Test 1: Dry Run with Claude
+#### Test 1: Dry Run with P1 Tickets
 ```bash
 cd /Users/hunter-morrison/git/APIScripts/Zendesk_Scripts/Ticket_work/bulk_ticket_export
-./run_analysis.sh claude
+./run_analysis.sh P1
 ```
 
 This will:
-- Export tickets from the last 7 days
-- Analyze them with Claude
+- Export P1 tickets from the last 7 days
+- Analyze them with Gemini AI
 - Print the analysis (without sending email)
 
-#### Test 2: Dry Run with Gemini
+#### Test 2: Dry Run with All Tickets
 ```bash
-./run_analysis.sh gemini
+./run_analysis.sh
 ```
 
-#### Test 3: Send Real Email (Claude)
+#### Test 3: Send Real Email (P1 Tickets)
 ```bash
-python3 ticket_analyzer.py --llm claude
+python3 ticket_analyzer.py --priorities P1
 ```
 
 This will actually send the email to your configured recipients.
@@ -140,7 +136,7 @@ Before waiting for Monday at 5 AM, test the cron wrapper:
 
 This will:
 - Load your environment variables
-- Run the analysis with Claude
+- Run the analysis with Gemini AI
 - Send the actual email
 - Log output to `logs/cron.log`
 
@@ -155,14 +151,16 @@ cat logs/cron.log
 
 **Run analysis without sending email (dry-run):**
 ```bash
-./run_analysis.sh claude    # Test with Claude
-./run_analysis.sh gemini    # Test with Gemini
+./run_analysis.sh P1        # Test with P1 tickets only
+./run_analysis.sh P1,P2     # Test with P1 and P2 tickets
+./run_analysis.sh           # Test with all tickets
 ```
 
 **Send actual email:**
 ```bash
-python3 ticket_analyzer.py --llm claude   # With Claude
-python3 ticket_analyzer.py --llm gemini   # With Gemini
+python3 ticket_analyzer.py --priorities P1      # P1 tickets only
+python3 ticket_analyzer.py --priorities P1,P2   # P1 and P2 tickets
+python3 ticket_analyzer.py                       # All tickets
 ```
 
 ### Automated Runs
@@ -170,20 +168,24 @@ python3 ticket_analyzer.py --llm gemini   # With Gemini
 The cron job will automatically run every **Monday at 5:00 AM Pacific Time**.
 
 - Exports tickets from the last 7 days
-- Analyzes with Claude (default)
+- Analyzes with Gemini AI
+- Filters for P1 tickets by default
 - Sends email to configured recipients
 - Logs output to `logs/cron.log`
 
-### Switching Between Claude and Gemini
+### Changing Priority Filter
 
-To change the default LLM used by cron, edit `cron_wrapper.sh`:
+To change which priorities are analyzed, edit `cron_wrapper.sh`:
 
 ```bash
-# Line 23 - change from:
-python3 ticket_analyzer.py --llm claude
+# Line 28 - change from:
+python3 ticket_analyzer.py --priorities P1
 
-# To:
-python3 ticket_analyzer.py --llm gemini
+# To analyze P1 and P2:
+python3 ticket_analyzer.py --priorities P1,P2
+
+# To analyze all tickets (remove --priorities):
+python3 ticket_analyzer.py
 ```
 
 ## 📧 Email Content
@@ -228,20 +230,20 @@ If not Pacific time, the cron wrapper explicitly sets `TZ=America/Los_Angeles`.
 
 ## 🛠️ Troubleshooting
 
-### Issue: "No module named 'anthropic'"
+### Issue: "No module named 'google.generativeai'"
 
 **Solution:** Reinstall dependencies:
 ```bash
 pip3 install -r requirements.txt
 ```
 
-### Issue: "ANTHROPIC_API_KEY environment variable not set"
+### Issue: "GOOGLE_API_KEY environment variable not set"
 
-**Solution:** Make sure you added the keys to `~/.zshrc` and ran `source ~/.zshrc`
+**Solution:** Make sure you added the key to `~/.zshrc` and ran `source ~/.zshrc`
 
 To test:
 ```bash
-echo $ANTHROPIC_API_KEY
+echo $GOOGLE_API_KEY
 ```
 
 ### Issue: Email not sending
@@ -311,7 +313,7 @@ Edit crontab (`crontab -e`):
 
 ### Customize Analysis Prompt
 
-Edit `ticket_analyzer.py`, lines ~113-135 (Claude) or ~158-180 (Gemini)
+Edit `ticket_analyzer.py`, function `analyze_with_gemini()` around line ~120
 
 Change the prompt to focus on different aspects of the tickets.
 
@@ -320,16 +322,16 @@ Change the prompt to focus on different aspects of the tickets.
 If you encounter issues:
 
 1. Check `logs/cron.log` for error messages
-2. Run `./run_analysis.sh claude --dry-run` to test without sending email
-3. Verify environment variables are set: `env | grep -E "ZENDESK|ANTHROPIC|GOOGLE|EMAIL"`
+2. Run `./run_analysis.sh P1` to test without sending email
+3. Verify environment variables are set: `env | grep -E "ZENDESK|GOOGLE|EMAIL"`
 
 ## ✅ Quick Verification Checklist
 
 - [ ] Python dependencies installed (`pip3 install -r requirements.txt`)
-- [ ] Environment variables set in `~/.zshrc`
+- [ ] Environment variables set in `~/.zshrc` (GOOGLE_API_KEY, EMAIL_*, ZENDESK_*)
 - [ ] Gmail App Password created and configured
-- [ ] Test run successful (`./run_analysis.sh gemini P1`)
-- [ ] Real email test successful (`python3 ticket_analyzer.py --llm gemini --priorities P1`)
+- [ ] Test run successful (`./run_analysis.sh P1`)
+- [ ] Real email test successful (`python3 ticket_analyzer.py --priorities P1`)
 - [ ] Cron job installed (`crontab -l` shows the entry)
 - [ ] Cron wrapper tested (`./cron_wrapper.sh`)
 

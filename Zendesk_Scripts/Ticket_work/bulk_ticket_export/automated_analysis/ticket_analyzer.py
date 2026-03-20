@@ -2,15 +2,15 @@
 """
 Automated Zendesk Ticket Analysis and Email Reporting
 
-Exports tickets from last 7 days, analyzes with LLM (Claude or Gemini), and emails results.
+Exports tickets from last 7 days, analyzes with Gemini AI, and emails results.
 
 Usage:
-    python3 ticket_analyzer.py --llm claude [--dry-run] [--priorities P1]
-    python3 ticket_analyzer.py --llm gemini [--dry-run] [--priorities P1,P2]
+    python3 ticket_analyzer.py [--dry-run] [--priorities P1]
+    python3 ticket_analyzer.py [--dry-run] [--priorities P1,P2]
 
 Environment Variables Required:
     - ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN (for export)
-    - ANTHROPIC_API_KEY (for Claude) or GOOGLE_API_KEY (for Gemini)
+    - GOOGLE_API_KEY (for Gemini AI)
     - EMAIL_FROM, EMAIL_PASSWORD, EMAIL_TO (for Gmail SMTP)
 """
 
@@ -115,68 +115,6 @@ def load_ticket_data(json_path):
     except Exception as e:
         logger.error(f"Failed to load ticket data: {e}")
         raise
-
-
-def analyze_with_claude(ticket_data):
-    """
-    Analyze tickets using Claude API.
-
-    Args:
-        ticket_data (dict): Ticket data from JSON export
-
-    Returns:
-        str: Analysis text from Claude
-    """
-    logger.info("Analyzing tickets with Claude")
-
-    try:
-        import anthropic
-    except ImportError:
-        raise ImportError("anthropic package not installed. Run: pip3 install anthropic")
-
-    api_key = os.environ.get('ANTHROPIC_API_KEY')
-    if not api_key:
-        raise ValueError("ANTHROPIC_API_KEY environment variable not set")
-
-    # Create analysis prompt
-    prompt = f"""You are analyzing Zendesk support tickets from the last 7 days.
-
-TICKETS DATA:
-{json.dumps(ticket_data, indent=2)}
-
-Please provide:
-1. Total ticket count
-2. For each ticket, provide:
-   - Ticket ID and subject
-   - Status and priority
-   - Response time (time from creation to first response, if available in comments)
-   - Time to resolution (if resolved)
-   - Brief 1-2 sentence summary of the issue
-3. Identify themes or patterns across all tickets:
-   - Common issue types
-   - Customer segments or organizations affected
-   - Notable trends or concerns
-
-Format the response clearly for email delivery. Use clear headings and bullet points."""
-
-    try:
-        client = anthropic.Anthropic(api_key=api_key)
-
-        message = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=4096,
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
-        )
-
-        analysis = message.content[0].text
-        logger.info("Claude analysis completed")
-        return analysis
-
-    except Exception as e:
-        logger.error(f"Claude API error: {e}")
-        raise RuntimeError(f"Failed to analyze with Claude: {e}")
 
 
 def analyze_with_gemini(ticket_data):
@@ -302,13 +240,7 @@ def send_email(subject, body, dry_run=False):
 def main():
     """Main execution function."""
     parser = argparse.ArgumentParser(
-        description='Automated Zendesk Ticket Analysis and Email Reporting'
-    )
-    parser.add_argument(
-        '--llm',
-        choices=['claude', 'gemini'],
-        required=True,
-        help='LLM to use for analysis'
+        description='Automated Zendesk Ticket Analysis and Email Reporting (Gemini AI)'
     )
     parser.add_argument(
         '--dry-run',
@@ -334,13 +266,8 @@ def main():
         # Step 3: Load ticket data
         ticket_data = load_ticket_data(json_path)
 
-        # Step 4: Analyze with selected LLM
-        if args.llm == 'claude':
-            analysis = analyze_with_claude(ticket_data)
-        elif args.llm == 'gemini':
-            analysis = analyze_with_gemini(ticket_data)
-        else:
-            raise ValueError(f"Unknown LLM: {args.llm}")
+        # Step 4: Analyze with Gemini
+        analysis = analyze_with_gemini(ticket_data)
 
         # Step 5: Send email
         priority_label = f" ({args.priorities} only)" if args.priorities else ""

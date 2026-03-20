@@ -1,8 +1,5 @@
 # Python dependencies for automated ticket analysis
 
-# Anthropic Claude API
-anthropic>=0.40.0
-
 # Google Gemini API
 google-generativeai>=0.8.0
 
