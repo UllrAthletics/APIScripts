@@ -147,11 +147,12 @@ TICKETS DATA:
 Please provide:
 1. Total ticket count
 2. For each ticket, provide:
-   - Ticket ID and subject
+   - Ticket ID, Organization Name (Not shortname) , and subject
    - Status and priority
    - Response time (time from creation to first response, if available in comments)
+   - Total customer and agent public comments
    - Time to resolution (if resolved)
-   - Brief 1-2 sentence summary of the issue
+   - Brief 1-2 sentence summary of the issue and current status/next steps if available
 3. Identify themes or patterns across all tickets:
    - Common issue types
    - Customer segments or organizations affected
