@@ -230,7 +230,7 @@ If not Pacific time, the cron wrapper explicitly sets `TZ=America/Los_Angeles`.
 
 ## 🛠️ Troubleshooting
 
-### Issue: "No module named 'google.generativeai'"
+### Issue: "No module named 'google.genai'"
 
 **Solution:** Reinstall dependencies:
 ```bash

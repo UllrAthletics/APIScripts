@@ -130,9 +130,9 @@ def analyze_with_gemini(ticket_data):
     logger.info("Analyzing tickets with Gemini")
 
     try:
-        import google.generativeai as genai
+        import google.genai as genai
     except ImportError:
-        raise ImportError("google-generativeai package not installed. Run: pip3 install google-generativeai")
+        raise ImportError("google-genai package not installed. Run: pip3 install google-genai")
 
     api_key = os.environ.get('GOOGLE_API_KEY')
     if not api_key:
@@ -160,10 +160,11 @@ Please provide:
 Format the response clearly for email delivery. Use clear headings and bullet points."""
 
     try:
-        genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('models/gemini-2.5-flash')
-
-        response = model.generate_content(prompt)
+        client = genai.Client(api_key=api_key)
+        response = client.models.generate_content(
+            model='gemini-2.5-flash',
+            contents=prompt
+        )
         analysis = response.text
 
         logger.info("Gemini analysis completed")
