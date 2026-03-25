@@ -2,14 +2,16 @@
 """
 Automated Zendesk Ticket Analysis and Email Reporting
 
-Exports tickets from last 7 days, analyzes with Gemini AI, and emails results.
+Exports tickets from last 7 days using BOTH credential sets, analyzes with
+Gemini AI, and emails results.
 
 Usage:
     python3 ticket_analyzer.py [--dry-run] [--priorities P1]
     python3 ticket_analyzer.py [--dry-run] [--priorities P1,P2]
 
 Environment Variables Required:
-    - ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN (for export)
+    - ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN (credential set 1)
+    - ZENDESK_SUBDOMAIN_2, ZENDESK_EMAIL_2, ZENDESK_API_TOKEN_2 (credential set 2)
     - GOOGLE_API_KEY (for Gemini AI)
     - EMAIL_FROM, EMAIL_PASSWORD, EMAIL_TO (for Gmail SMTP)
 """
@@ -35,7 +37,9 @@ logger = logging.getLogger(__name__)
 # Auto-detect script directory (works on any machine)
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 EXPORTER_SCRIPT = os.path.join(SCRIPT_DIR, "zendesk_exporter.py")
-OUTPUT_FILE = os.path.join(SCRIPT_DIR, "exported_tickets.json")
+OUTPUT_FILE_SET1 = os.path.join(SCRIPT_DIR, "exported_tickets_set1.json")
+OUTPUT_FILE_SET2 = os.path.join(SCRIPT_DIR, "exported_tickets_set2.json")
+OUTPUT_FILE_COMBINED = os.path.join(SCRIPT_DIR, "exported_tickets.json")
 
 
 def calculate_date_range():
@@ -45,7 +49,7 @@ def calculate_date_range():
     return start_date.strftime('%Y-%m-%d'), end_date.strftime('%Y-%m-%d')
 
 
-def run_export(start_date, end_date, priorities=None):
+def run_export(start_date, end_date, priorities=None, credential_set=1):
     """
     Execute zendesk_exporter.py with proper arguments.
 
@@ -53,6 +57,7 @@ def run_export(start_date, end_date, priorities=None):
         start_date (str): Start date in YYYY-MM-DD format
         end_date (str): End date in YYYY-MM-DD format
         priorities (str): Comma-separated priorities (e.g., "P1" or "P1,P2")
+        credential_set (int): Which credential set to use (1 or 2)
 
     Returns:
         str: Path to exported JSON file
@@ -60,7 +65,10 @@ def run_export(start_date, end_date, priorities=None):
     Raises:
         RuntimeError: If export fails
     """
-    logger.info(f"Running ticket export for {start_date} to {end_date}")
+    output_file = OUTPUT_FILE_SET1 if credential_set == 1 else OUTPUT_FILE_SET2
+
+    logger.info(f"Running ticket export for credential set {credential_set}")
+    logger.info(f"Date range: {start_date} to {end_date}")
     if priorities:
         logger.info(f"Filtering for priorities: {priorities}")
 
@@ -70,7 +78,8 @@ def run_export(start_date, end_date, priorities=None):
         "--start-date", start_date,
         "--end-date", end_date,
         "--format", "json",
-        "--output", OUTPUT_FILE
+        "--output", output_file,
+        "--credential-set", str(credential_set)
     ]
 
     # Add priorities filter if specified
@@ -85,12 +94,12 @@ def run_export(start_date, end_date, priorities=None):
             text=True,
             cwd=SCRIPT_DIR
         )
-        logger.info("Export completed successfully")
+        logger.info(f"Export completed successfully for credential set {credential_set}")
         logger.debug(result.stdout)
-        return OUTPUT_FILE
+        return output_file
     except subprocess.CalledProcessError as e:
-        logger.error(f"Export failed: {e.stderr}")
-        raise RuntimeError(f"Failed to export tickets: {e.stderr}")
+        logger.error(f"Export failed for credential set {credential_set}: {e.stderr}")
+        raise RuntimeError(f"Failed to export tickets for credential set {credential_set}: {e.stderr}")
 
 
 def load_ticket_data(json_path):
@@ -117,6 +126,61 @@ def load_ticket_data(json_path):
         raise
 
 
+def merge_ticket_data(data_set1, data_set2):
+    """
+    Merge ticket data from two credential sets.
+
+    Args:
+        data_set1 (dict): Ticket data from credential set 1
+        data_set2 (dict): Ticket data from credential set 2
+
+    Returns:
+        dict: Combined ticket data
+    """
+    logger.info("Merging ticket data from both credential sets")
+
+    # Combine tickets from both sets
+    tickets_set1 = data_set1.get('tickets', [])
+    tickets_set2 = data_set2.get('tickets', [])
+    all_tickets = tickets_set1 + tickets_set2
+
+    # Get metadata from set 1 as base
+    metadata = data_set1.get('export_metadata', {}).copy()
+
+    # Update metadata with combined information
+    metadata['total_tickets'] = len(all_tickets)
+    metadata['credential_sets'] = [1, 2]
+    metadata['set1_tickets'] = len(tickets_set1)
+    metadata['set2_tickets'] = len(tickets_set2)
+
+    # Merge priority breakdowns if available
+    if 'priority_breakdown' in data_set1.get('export_metadata', {}) and \
+       'priority_breakdown' in data_set2.get('export_metadata', {}):
+        breakdown1 = data_set1['export_metadata']['priority_breakdown']
+        breakdown2 = data_set2['export_metadata']['priority_breakdown']
+        combined_breakdown = {}
+        for key in set(breakdown1.keys()) | set(breakdown2.keys()):
+            combined_breakdown[key] = breakdown1.get(key, 0) + breakdown2.get(key, 0)
+        metadata['priority_breakdown'] = combined_breakdown
+
+    combined_data = {
+        'export_metadata': metadata,
+        'tickets': all_tickets
+    }
+
+    logger.info(f"Combined data: {len(tickets_set1)} tickets from set 1 + {len(tickets_set2)} tickets from set 2 = {len(all_tickets)} total")
+
+    # Save combined data to file for reference
+    try:
+        with open(OUTPUT_FILE_COMBINED, 'w', encoding='utf-8') as f:
+            json.dump(combined_data, f, indent=4, ensure_ascii=False)
+        logger.info(f"Saved combined ticket data to {OUTPUT_FILE_COMBINED}")
+    except Exception as e:
+        logger.warning(f"Failed to save combined data: {e}")
+
+    return combined_data
+
+
 def analyze_with_gemini(ticket_data):
     """
     Analyze tickets using Google Gemini API.
@@ -139,7 +203,16 @@ def analyze_with_gemini(ticket_data):
         raise ValueError("GOOGLE_API_KEY environment variable not set")
 
     # Create analysis prompt
+    metadata = ticket_data.get('export_metadata', {})
+    set1_count = metadata.get('set1_tickets', 0)
+    set2_count = metadata.get('set2_tickets', 0)
+
     prompt = f"""You are analyzing Zendesk support tickets from the last 7 days.
+
+NOTE: This data includes tickets from TWO separate Zendesk instances:
+- Credential Set 1: {set1_count} tickets
+- Credential Set 2: {set2_count} tickets
+- Total: {metadata.get('total_tickets', 0)} tickets
 
 TICKETS DATA:
 {json.dumps(ticket_data, indent=2)}
@@ -400,16 +473,32 @@ def main():
         start_date, end_date = calculate_date_range()
         logger.info(f"Analysis period: {start_date} to {end_date}")
 
-        # Step 2: Run ticket export
-        json_path = run_export(start_date, end_date, priorities=args.priorities)
+        # Step 2: Run ticket export for credential set 1
+        logger.info("=" * 80)
+        logger.info("EXPORTING TICKETS FROM CREDENTIAL SET 1")
+        logger.info("=" * 80)
+        json_path_set1 = run_export(start_date, end_date, priorities=args.priorities, credential_set=1)
 
-        # Step 3: Load ticket data
-        ticket_data = load_ticket_data(json_path)
+        # Step 3: Run ticket export for credential set 2
+        logger.info("=" * 80)
+        logger.info("EXPORTING TICKETS FROM CREDENTIAL SET 2")
+        logger.info("=" * 80)
+        json_path_set2 = run_export(start_date, end_date, priorities=args.priorities, credential_set=2)
 
-        # Step 4: Analyze with Gemini
-        analysis = analyze_with_gemini(ticket_data)
+        # Step 4: Load ticket data from both sets
+        ticket_data_set1 = load_ticket_data(json_path_set1)
+        ticket_data_set2 = load_ticket_data(json_path_set2)
 
-        # Step 5: Send email
+        # Step 5: Merge ticket data from both sets
+        logger.info("=" * 80)
+        logger.info("MERGING TICKET DATA FROM BOTH CREDENTIAL SETS")
+        logger.info("=" * 80)
+        combined_ticket_data = merge_ticket_data(ticket_data_set1, ticket_data_set2)
+
+        # Step 6: Analyze with Gemini
+        analysis = analyze_with_gemini(combined_ticket_data)
+
+        # Step 7: Send email
         priority_label = f" ({args.priorities} only)" if args.priorities else ""
         subject = f"Zendesk Ticket Analysis{priority_label} - {start_date} to {end_date}"
         send_email(subject, analysis, dry_run=args.dry_run)

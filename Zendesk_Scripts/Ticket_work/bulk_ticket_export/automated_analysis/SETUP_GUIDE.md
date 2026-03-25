@@ -2,6 +2,8 @@
 
 This guide will help you set up the automated Zendesk ticket analysis system that runs every Monday at 5 AM Pacific time.
 
+**🔄 Dual Credential Support:** The system automatically exports tickets from TWO Zendesk instances (credential sets) and combines them for a unified analysis.
+
 **✨ This system is fully portable** - all scripts auto-detect their location and can be copied to any machine or directory!
 
 ## 📋 What Was Created
@@ -30,10 +32,21 @@ nano ~/.zshrc
 
 # Add these lines (fill in your actual values):
 
-# --- Zendesk API (already configured if zendesk_exporter.py works) ---
+# --- Zendesk API - Credential Set 1 ---
 export ZENDESK_SUBDOMAIN="your_subdomain"
 export ZENDESK_EMAIL="your_zendesk_email@company.com"
 export ZENDESK_API_TOKEN="your_zendesk_api_token"
+
+# --- Zendesk API - Credential Set 2 ---
+export ZENDESK_SUBDOMAIN_2="your_second_subdomain"
+export ZENDESK_EMAIL_2="your_second_zendesk_email@company.com"
+export ZENDESK_API_TOKEN_2="your_second_zendesk_api_token"
+
+# --- Priority Field IDs (Custom field ID for ticket priority) ---
+# Set 1: Use either PRIORITY_FIELD_ID or PRIORITY_FIELD_ID_1
+export PRIORITY_FIELD_ID="360047533253"
+# Set 2: Must use PRIORITY_FIELD_ID_2
+export PRIORITY_FIELD_ID_2="123456789012"
 
 # --- Gemini API Key ---
 export GOOGLE_API_KEY="AIza..."
@@ -48,6 +61,21 @@ export EMAIL_TO="recipient1@email.com,recipient2@email.com"
 ```bash
 source ~/.zshrc
 ```
+
+#### Finding Your Priority Field ID
+
+Each Zendesk instance may have a different custom field ID for ticket priority. To find yours:
+
+1. Go to your Zendesk Admin Center
+2. Navigate to **Objects and rules** → **Tickets** → **Fields**
+3. Click on your "Ticket Priority" field (or equivalent custom field)
+4. Look at the URL - it will contain the field ID
+   - Example: `https://yourcompany.zendesk.com/admin/objects-rules/tickets/ticket-fields/360047533253`
+   - The ID is: `360047533253`
+5. Set this as `PRIORITY_FIELD_ID` (or `PRIORITY_FIELD_ID_1`) for credential set 1
+6. Repeat for your second Zendesk instance and set as `PRIORITY_FIELD_ID_2`
+
+**Note:** The system will automatically export tickets from BOTH credential sets and combine them for analysis.
 
 ### Step 2: Set Up Gmail App Password
 
@@ -71,7 +99,8 @@ cd /Users/hunter-morrison/git/APIScripts/Zendesk_Scripts/Ticket_work/bulk_ticket
 ```
 
 This will:
-- Export P1 tickets from the last 7 days
+- Export P1 tickets from the last 7 days (from BOTH credential sets)
+- Combine the tickets
 - Analyze them with Gemini AI
 - Print the analysis (without sending email)
 
@@ -167,7 +196,8 @@ python3 ticket_analyzer.py                       # All tickets
 
 The cron job will automatically run every **Monday at 5:00 AM Pacific Time**.
 
-- Exports tickets from the last 7 days
+- Exports tickets from the last 7 days from **BOTH Zendesk instances** (credential sets 1 & 2)
+- Combines tickets into a single dataset
 - Analyzes with Gemini AI
 - Filters for P1 tickets by default
 - Sends email to configured recipients
@@ -279,6 +309,18 @@ If your system isn't set to Pacific time:
 2. Verify with: `date` (should show PST/PDT)
 3. Cron uses system time, so 5 AM cron = 5 AM system time
 
+### Issue: Priority filter not working
+
+**Symptoms:** All tickets are showing as "unassigned" priority or priority filter has no effect
+
+**Solution:** Check your priority field IDs:
+1. Verify the field ID in each Zendesk instance (see "Finding Your Priority Field ID" above)
+2. Make sure you've set the correct environment variables:
+   - `PRIORITY_FIELD_ID` or `PRIORITY_FIELD_ID_1` for credential set 1
+   - `PRIORITY_FIELD_ID_2` for credential set 2
+3. Reload your shell config: `source ~/.zshrc`
+4. Test: `echo $PRIORITY_FIELD_ID` and `echo $PRIORITY_FIELD_ID_2`
+
 ## 🎛️ Customization
 
 ### Change Analysis Timeframe
@@ -323,12 +365,19 @@ If you encounter issues:
 
 1. Check `logs/cron.log` for error messages
 2. Run `./run_analysis.sh P1` to test without sending email
-3. Verify environment variables are set: `env | grep -E "ZENDESK|GOOGLE|EMAIL"`
+3. Verify environment variables are set:
+   ```bash
+   env | grep -E "ZENDESK|GOOGLE|EMAIL|PRIORITY_FIELD"
+   ```
 
 ## ✅ Quick Verification Checklist
 
 - [ ] Python dependencies installed (`pip3 install -r requirements.txt`)
-- [ ] Environment variables set in `~/.zshrc` (GOOGLE_API_KEY, EMAIL_*, ZENDESK_*)
+- [ ] Environment variables set in `~/.zshrc`:
+  - [ ] ZENDESK credentials for both sets (ZENDESK_*, ZENDESK_*_2)
+  - [ ] Priority field IDs for both sets (PRIORITY_FIELD_ID, PRIORITY_FIELD_ID_2)
+  - [ ] GOOGLE_API_KEY for Gemini AI
+  - [ ] EMAIL_* for Gmail SMTP
 - [ ] Gmail App Password created and configured
 - [ ] Test run successful (`./run_analysis.sh P1`)
 - [ ] Real email test successful (`python3 ticket_analyzer.py --priorities P1`)

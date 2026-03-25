@@ -5,6 +5,15 @@ Export Zendesk tickets by organization, timeframe, or custom priority field.
 Supports multiple credential sets, full event history, flexible filtering, and
 multiple output formats (JSON, CSV).
 
+Environment Variables:
+    Credentials (Set 1):
+        ZENDESK_SUBDOMAIN, ZENDESK_EMAIL, ZENDESK_API_TOKEN
+    Credentials (Set 2):
+        ZENDESK_SUBDOMAIN_2, ZENDESK_EMAIL_2, ZENDESK_API_TOKEN_2
+    Priority Field IDs (optional):
+        PRIORITY_FIELD_ID or PRIORITY_FIELD_ID_1 - for credential set 1
+        PRIORITY_FIELD_ID_2 - for credential set 2
+
 Usage:
     python zendesk_exporter.py [OPTIONS]
 
@@ -24,7 +33,7 @@ Examples:
     # Export to CSV format
     python zendesk_exporter.py --start-date 2024-01-01 --end-date 2024-01-31 --format csv
 
-    # Use second credential set
+    # Use second credential set with custom priority field
     python zendesk_exporter.py --credential-set 2 --organization-id 67890
 """
 
@@ -40,8 +49,10 @@ from datetime import datetime
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# Custom field configuration
-PRIORITY_FIELD_ID = "360047533253"
+# Custom field configuration (can be overridden via environment variables)
+# Use PRIORITY_FIELD_ID or PRIORITY_FIELD_ID_1 for credential set 1
+# Use PRIORITY_FIELD_ID_2 for credential set 2
+DEFAULT_PRIORITY_FIELD_ID = "360047533253"
 PRIORITY_FIELD_NAME = "Ticket Priority"
 VALID_PRIORITIES = ["P1", "P2", "P3", "P4"]
 
@@ -154,7 +165,7 @@ def validate_date_field(field):
 
 
 def build_search_query(organization_id=None, start_date=None, end_date=None,
-                      date_field="created", ticket_priorities=None):
+                      date_field="created", ticket_priorities=None, priority_field_id=None):
     """
     Build Zendesk search query string with multiple filter options.
 
@@ -169,13 +180,14 @@ def build_search_query(organization_id=None, start_date=None, end_date=None,
         end_date (str, optional): End date in YYYY-MM-DD format
         date_field (str, optional): Date field to filter on (created, updated, solved)
         ticket_priorities (list, optional): List of priority values (P1, P2, P3, P4)
+        priority_field_id (str, optional): Custom field ID for priority (if using priority filter)
 
     Returns:
         str: Zendesk search query string
 
     Example:
         >>> build_search_query(start_date="2024-01-01", end_date="2024-01-31",
-        ...                    ticket_priorities=["P1", "P2"])
+        ...                    ticket_priorities=["P1", "P2"], priority_field_id="360047533253")
         'type:ticket created>=2024-01-01 created<=2024-01-31 (custom_field_360047533253:P1 custom_field_360047533253:P2)'
     """
     query_parts = ["type:ticket"]
@@ -192,9 +204,9 @@ def build_search_query(organization_id=None, start_date=None, end_date=None,
     # Add custom field priority filter (uses OR logic for multiple priorities)
     # Convert to lowercase for Zendesk query (Zendesk uses lowercase priority values)
     # Note: Space-separated custom field queries use OR logic automatically (no parentheses needed)
-    if ticket_priorities:
+    if ticket_priorities and priority_field_id:
         for p in ticket_priorities:
-            query_parts.append(f"custom_field_{PRIORITY_FIELD_ID}:{p.lower()}")
+            query_parts.append(f"custom_field_{priority_field_id}:{p.lower()}")
 
     return " ".join(query_parts)
 
@@ -241,7 +253,7 @@ def generate_filename(start_date=None, end_date=None, priorities=None, organizat
     return "_".join(parts) + f".{file_format}"
 
 
-def flatten_ticket_for_csv(ticket):
+def flatten_ticket_for_csv(ticket, priority_field_id=None):
     """
     Flatten ticket dictionary for CSV export.
 
@@ -250,6 +262,7 @@ def flatten_ticket_for_csv(ticket):
 
     Args:
         ticket (dict): Ticket dictionary from Zendesk API
+        priority_field_id (str, optional): Custom field ID for priority
 
     Returns:
         dict: Flattened ticket data suitable for CSV
@@ -272,12 +285,15 @@ def flatten_ticket_for_csv(ticket):
         'url': ticket.get('url'),
     }
 
-    # Extract custom field for Ticket Priority (ID: 360047533253)
-    custom_fields = ticket.get('custom_fields', [])
-    for field in custom_fields:
-        if field.get('id') == int(PRIORITY_FIELD_ID):
-            flattened['ticket_priority'] = field.get('value', '')
-            break
+    # Extract custom field for Ticket Priority
+    if priority_field_id:
+        custom_fields = ticket.get('custom_fields', [])
+        for field in custom_fields:
+            if field.get('id') == int(priority_field_id):
+                flattened['ticket_priority'] = field.get('value', '')
+                break
+        else:
+            flattened['ticket_priority'] = ''
     else:
         flattened['ticket_priority'] = ''
 
@@ -290,7 +306,7 @@ def flatten_ticket_for_csv(ticket):
     return flattened
 
 
-def export_to_csv(tickets, output_path):
+def export_to_csv(tickets, output_path, priority_field_id=None):
     """
     Export tickets to CSV format.
 
@@ -300,6 +316,7 @@ def export_to_csv(tickets, output_path):
     Args:
         tickets (list): List of ticket dictionaries
         output_path (str): Path to output CSV file
+        priority_field_id (str, optional): Custom field ID for priority
 
     Returns:
         None
@@ -318,7 +335,7 @@ def export_to_csv(tickets, output_path):
         return
 
     # Flatten all tickets
-    flattened_tickets = [flatten_ticket_for_csv(ticket) for ticket in tickets]
+    flattened_tickets = [flatten_ticket_for_csv(ticket, priority_field_id) for ticket in tickets]
 
     # Get all unique field names (in case some tickets have extra fields)
     fieldnames = set()
@@ -546,7 +563,7 @@ class ZendeskAPIClient:
         return enriched_tickets
 
     def search_tickets_by_timeframe(self, start_date, end_date, date_field="created",
-                                    ticket_priorities=None, organization_id=None):
+                                    ticket_priorities=None, organization_id=None, priority_field_id=None):
         """
         Search tickets by date range with optional filters.
 
@@ -561,13 +578,14 @@ class ZendeskAPIClient:
             date_field (str): Date field to filter on ("created", "updated", "solved")
             ticket_priorities (list, optional): List of priorities to filter (P1, P2, P3, P4)
             organization_id (str, optional): Organization ID to filter by
+            priority_field_id (str, optional): Custom field ID for priority
 
         Returns:
             list: List of ticket dictionaries matching the search criteria
         """
         # Build search query with all specified filters
         query = build_search_query(organization_id, start_date, end_date,
-                                   date_field, ticket_priorities)
+                                   date_field, ticket_priorities, priority_field_id)
 
         all_tickets = []
         page_number = 1
@@ -667,6 +685,33 @@ def normalize_credential_set(value):
         raise ValueError(f"Invalid credential set: {value}. Must be 1 or 2.")
 
 
+def get_priority_field_id(credential_set=1):
+    """
+    Get the priority field ID for the specified credential set.
+
+    Checks environment variables in this order:
+    - For set 1: PRIORITY_FIELD_ID_1, then PRIORITY_FIELD_ID, then default
+    - For set 2: PRIORITY_FIELD_ID_2, then default
+
+    Args:
+        credential_set (int): Which credential set (1 or 2)
+
+    Returns:
+        str: Priority field ID to use
+    """
+    if credential_set == 1:
+        # Try PRIORITY_FIELD_ID_1 first, then PRIORITY_FIELD_ID, then default
+        field_id = os.getenv('PRIORITY_FIELD_ID_1') or os.getenv('PRIORITY_FIELD_ID') or DEFAULT_PRIORITY_FIELD_ID
+    elif credential_set == 2:
+        # Try PRIORITY_FIELD_ID_2, then default
+        field_id = os.getenv('PRIORITY_FIELD_ID_2') or DEFAULT_PRIORITY_FIELD_ID
+    else:
+        field_id = DEFAULT_PRIORITY_FIELD_ID
+
+    logging.info(f"Using priority field ID for credential set {credential_set}: {field_id}")
+    return field_id
+
+
 def load_credentials(credential_set=None):
     """
     Load Zendesk credentials based on selected set or auto-detection.
@@ -743,15 +788,16 @@ def load_credentials(credential_set=None):
         sys.exit(1)
 
 
-def calculate_priority_breakdown(tickets):
+def calculate_priority_breakdown(tickets, priority_field_id=None):
     """
     Calculate breakdown of tickets by priority level.
 
-    Analyzes the custom "Ticket Priority" field (ID: 360047533253) across
-    all tickets and provides a count for each priority level.
+    Analyzes the custom "Ticket Priority" field across all tickets and
+    provides a count for each priority level.
 
     Args:
         tickets (list): List of ticket dictionaries
+        priority_field_id (str, optional): Custom field ID for priority
 
     Returns:
         dict: Dictionary with priority counts and unassigned count
@@ -759,12 +805,17 @@ def calculate_priority_breakdown(tickets):
     """
     breakdown = {'P1': 0, 'P2': 0, 'P3': 0, 'P4': 0, 'unassigned': 0}
 
+    if not priority_field_id:
+        # If no priority field ID provided, all tickets are unassigned
+        breakdown['unassigned'] = len(tickets)
+        return breakdown
+
     for ticket in tickets:
         priority_found = False
         custom_fields = ticket.get('custom_fields', [])
 
         for field in custom_fields:
-            if field.get('id') == int(PRIORITY_FIELD_ID):
+            if field.get('id') == int(priority_field_id):
                 priority_value = field.get('value', '')
                 # Normalize to uppercase for comparison (Zendesk may use lowercase)
                 priority_upper = priority_value.upper() if priority_value else ''
@@ -905,6 +956,9 @@ if __name__ == "__main__":
     # Load credentials
     SUBDOMAIN, EMAIL, API_TOKEN, selected_set = load_credentials(credential_set)
     logging.info(f"Using credential set {selected_set}: {SUBDOMAIN} ({EMAIL})")
+
+    # Get priority field ID for this credential set
+    priority_field_id = get_priority_field_id(selected_set)
 
     # Get configuration from CLI args or env vars
     start_date = args.start_date or os.getenv("START_DATE")
@@ -1047,7 +1101,8 @@ if __name__ == "__main__":
                 end_date=end_date,
                 date_field=date_field,
                 ticket_priorities=priorities,
-                organization_id=organization_id
+                organization_id=organization_id,
+                priority_field_id=priority_field_id
             )
         else:
             # Organization-only mode (backward compatibility)
@@ -1064,13 +1119,13 @@ if __name__ == "__main__":
             logging.info("Skipping full event history. Only ticket metadata will be exported.")
 
         # Calculate and display export summary
-        priority_breakdown = calculate_priority_breakdown(tickets)
+        priority_breakdown = calculate_priority_breakdown(tickets, priority_field_id)
         log_export_summary(tickets, priority_breakdown)
 
         # Write to file based on format
         if output_format == "csv":
             # CSV export - tickets only (metadata not included in CSV)
-            export_to_csv(tickets, output_path)
+            export_to_csv(tickets, output_path, priority_field_id)
         else:
             # JSON export - with metadata if timeframe mode
             if has_timeframe:
@@ -1081,11 +1136,12 @@ if __name__ == "__main__":
                         "end_date": end_date,
                         "date_field": date_field,
                         "ticket_priorities": priorities,
-                        "priority_field_id": PRIORITY_FIELD_ID if priorities else None,
+                        "priority_field_id": priority_field_id,
                         "organization_id": organization_id,
                         "total_tickets": len(tickets),
                         "priority_breakdown": priority_breakdown,
                         "includes_history": fetch_history,
+                        "credential_set": selected_set,
                         "format": "json"
                     },
                     "tickets": tickets
