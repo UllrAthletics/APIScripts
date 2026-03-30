@@ -23,6 +23,9 @@ echo "========================================" >> logs/cron.log
 echo "Execution started at $(date)" >> logs/cron.log
 echo "========================================" >> logs/cron.log
 
+# Clean up old exported ticket files
+rm -f exported_tickets*.json
+
 # Run the analysis (P1 tickets only)
 # Remove --priorities flag to get all tickets
 python3 ticket_analyzer.py --priorities P1 2>&1 | tee -a logs/cron.log
